@@ -1,0 +1,60 @@
+apiVersion: fleet.elbadry.dev/v1alpha1
+kind: NodeHealthPolicy
+metadata:
+  name: h100-baseline
+spec:
+  nodeClassRef:
+    name: h100-sxm-8x
+
+  signals:
+    # A single ECC error is noise. Five in ten minutes is a dying card.
+    - name: eccUncorrectable
+      source:
+        type: Prometheus
+        query: increase(gpu_ecc_uncorrectable_total[10m])
+      operator: GreaterThan
+      threshold: "5"
+      window: 10m
+      requireConsecutive: 2
+      severity: Critical
+      action: Drain
+
+    - name: thermalThrottle
+      source:
+        type: Prometheus
+        query: increase(gpu_thermal_throttle_seconds_total[5m])
+      operator: GreaterThan
+      threshold: "30"
+      window: 5m
+      severity: Warning
+      action: Cordon
+
+    - name: pcieLinkDegraded
+      source:
+        type: NodeCondition
+        key: PCIeLinkWidthDegraded
+      operator: Equals
+      threshold: "True"
+      window: 2m
+      severity: Warning
+      action: Cordon
+
+    # Drift is informational: flag the node, do not evict anything.
+    - name: firmwareDrift
+      source:
+        type: NodeLabel
+        key: fleet.elbadry.dev/bmc-version
+      operator: NotEquals
+      threshold: "2.4.1"
+      severity: Info
+      action: Taint
+
+  escalation:
+    gracePeriod: 5m
+    # Without a timeout, a pod with a broken PDB pins a budget slot forever.
+    drainTimeout: 15m
+
+  repair:
+    quarantineLabel: fleet.elbadry.dev/repair-required
+    # Auto-clearing would mask a recurring hardware fault.
+    requireManualClear: true

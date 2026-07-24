@@ -1,0 +1,28 @@
+apiVersion: fleet.elbadry.dev/v1alpha1
+kind: NodeClass
+metadata:
+  name: h100-sxm-8x
+spec:
+  selector:
+    matchLabels:
+      fleet.elbadry.dev/sku: h100-sxm-8x
+  hardware:
+    accelerators:
+      count: 8
+      model: H100-SXM5-80GB
+      interconnect: NVLink4
+    memory: 2Ti
+    powerEnvelopeWatts: 10200
+  disruption:
+    # 5% of the class may be unavailable at once.
+    maxUnavailable: "5%"
+    # Hard floor: never drop below 12 serving nodes, whatever the ratio says.
+    minHealthyAbsolute: 12
+    # Planned work gets 60% of the budget; 40% stays reserved for unplanned
+    # hardware failure that happens to land during a maintenance window.
+    plannedShare: "60%"
+  firmware:
+    baseline:
+      bmc: "2.4.1"
+      bios: "1.9.0"
+      cpld: "0.4.2"

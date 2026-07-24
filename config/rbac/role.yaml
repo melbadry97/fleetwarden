@@ -1,0 +1,43 @@
+# Least privilege for the manager. Note the deliberate omissions:
+#   * nodes/status is absent — status belongs to the kubelet
+#   * nodes has patch but not update — we modify taints and annotations,
+#     never wholesale replace the object
+#   * secrets access is a namespaced Role, not part of this ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fleetwarden-manager
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: ["fleet.elbadry.dev"]
+    resources: ["nodeclasses", "nodehealthpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["fleet.elbadry.dev"]
+    resources: ["nodeclasses/status", "nodehealthpolicies/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+# A cluster-wide secrets grant on a fleet operator is a lateral-movement path
+# to every credential in the cluster. Scope it to the credential namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fleetwarden-creds-reader
+  namespace: fleetwarden-creds
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]

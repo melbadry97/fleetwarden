@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fleetwarden-system
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fleetwarden-creds
+---
+# The credential namespace denies all egress except from the OOB broker, so a
+# compromised controller cannot reach the management network directly.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: creds-default-deny
+  namespace: fleetwarden-creds
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fleetwarden-manager
+  namespace: fleetwarden-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: fleetwarden}
+  template:
+    metadata:
+      labels: {app: fleetwarden}
+    spec:
+      serviceAccountName: fleetwarden-manager
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: manager
+          image: fleetwarden:dev
+          args:
+            # Two active managers would double-spend the budget, so leader
+            # election is mandatory at replicas > 1.
+            - --leader-elect=true
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
+          env:
+            - name: PROMETHEUS_URL
+              value: http://prometheus.monitoring:9090
+          ports:
+            - {name: metrics, containerPort: 8080}
+            - {name: probes, containerPort: 8081}
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8081}
+            initialDelaySeconds: 15
+          readinessProbe:
+            httpGet: {path: /readyz, port: 8081}
+            initialDelaySeconds: 5
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
