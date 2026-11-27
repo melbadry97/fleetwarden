@@ -39,7 +39,7 @@ vet: ## Vet
 ##@ Testing
 
 test-core: ## Unit test the dependency-free core (no cluster, no k8s modules)
-	go test -race -cover ./internal/... ./cmd/fakeredfish/...
+	go test -race -cover ./internal/... ./cmd/fakeredfish/... ./cmd/fleetdoctor/...
 
 test: manifests generate fmt vet envtest ## Full test suite including envtest
 	KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" \
@@ -55,6 +55,16 @@ build: ## Build the manager binary
 
 build-sim: ## Build the Redfish simulator
 	go build -o $(BINDIR)/fakeredfish ./cmd/fakeredfish
+
+build-doctor: ## Build the AI diagnose-and-predict pipeline
+	go build -o $(BINDIR)/fleetdoctor ./cmd/fleetdoctor
+
+doctor-demo: build-sim build-doctor ## Run fleetdoctor against a freshly-faulted rack
+	@pkill -f fakeredfish 2>/dev/null || true
+	@$(BINDIR)/fakeredfish --rack r14 --count 16 \
+		--faults r14-1=ecc-storm,r14-2=ecc-storm,r14-3=ecc-storm,r14-4=ecc-storm,r14-5=ecc-storm,r14-8=pcie-degraded,r14-9=thermal,r14-11=unreachable & \
+		sleep 1.2; $(BINDIR)/fleetdoctor --rack r14 --count 16 --offline; \
+		pkill -f fakeredfish 2>/dev/null || true
 
 docker-build: ## Build the container image
 	docker build -t $(IMG) .
@@ -104,5 +114,5 @@ envtest: ## Install setup-envtest
 		go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
 .PHONY: help deps generate manifests fmt vet test test-core cover build build-sim \
-	docker-build kind-up kind-down fake-nodes install deploy samples demo run \
-	controller-gen envtest
+	build-doctor doctor-demo docker-build kind-up kind-down fake-nodes install deploy \
+	samples demo run controller-gen envtest
